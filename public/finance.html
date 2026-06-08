@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Financeiro — ZacxOrg</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar-container"></div>
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Financeiro</div>
+      <div class="topbar-actions"><button class="btn btn-primary" onclick="openModal()">+ Nova Transação</button></div>
+    </div>
+    <div class="content">
+      <div class="finance-summary">
+        <div class="stat-card"><div class="stat-icon" style="background:#f0fdf4"><svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg></div><div class="stat-value" style="color:#22c55e" id="s-income">—</div><div class="stat-label">Receita Total</div></div>
+        <div class="stat-card"><div class="stat-icon" style="background:#fef2f2"><svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/></svg></div><div class="stat-value" style="color:#ef4444" id="s-expense">—</div><div class="stat-label">Despesas</div></div>
+        <div class="stat-card"><div class="stat-icon" style="background:#eef2ff"><svg viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div><div class="stat-value" id="s-balance">—</div><div class="stat-label">Saldo</div></div>
+      </div>
+
+      <div class="grid-2 mb-6">
+        <div class="card"><div class="card-header"><h2>Distribuição</h2></div><div class="card-body" style="height:180px"><canvas id="finChart"></canvas></div></div>
+        <div class="card"><div class="card-header"><h2>Por Categoria</h2></div><div id="catList" style="padding:8px 0"></div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h2>Transações</h2></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Descrição</th><th>Categoria</th><th>Tipo</th><th>Valor</th><th>Data</th><th></th></tr></thead>
+          <tbody id="txTable"></tbody>
+        </table></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Nova Transação</h2>
+      <button class="modal-close" onclick="closeModal()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <form onsubmit="saveTx(event)">
+      <div class="grid-2">
+        <div class="form-group"><label>Tipo *</label><select id="txType"><option value="INCOME">Receita</option><option value="EXPENSE">Despesa</option></select></div>
+        <div class="form-group"><label>Valor (R$) *</label><input type="number" id="txAmount" placeholder="0.00" step="0.01" min="0" required></div>
+      </div>
+      <div class="grid-2">
+        <div class="form-group"><label>Categoria</label><input id="txCat" placeholder="Ex: Vendas, Marketing..."></div>
+        <div class="form-group"><label>Data *</label><input type="date" id="txDate" required></div>
+      </div>
+      <div class="form-group"><label>Descrição</label><input id="txDesc" placeholder="Descrição opcional"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-primary" id="saveBtn">Salvar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+  requireAuth();
+  document.getElementById('sidebar-container').innerHTML = renderSidebar('finance');
+  document.getElementById('txDate').value = new Date().toISOString().split('T')[0];
+
+  let txs = [], chart;
+
+  async function load() {
+    txs = await API.get('/transactions');
+    const income = txs.filter(t => t.type==='INCOME').reduce((s,t)=>s+t.amount,0);
+    const expense = txs.filter(t => t.type==='EXPENSE').reduce((s,t)=>s+t.amount,0);
+    const balance = income - expense;
+    document.getElementById('s-income').textContent = fmt(income);
+    document.getElementById('s-expense').textContent = fmt(expense);
+    document.getElementById('s-balance').textContent = fmt(balance);
+    document.getElementById('s-balance').style.color = balance >= 0 ? '#22c55e' : '#ef4444';
+
+    // Chart
+    if (chart) chart.destroy();
+    chart = new Chart(document.getElementById('finChart'), {
+      type: 'doughnut',
+      data: { labels:['Receita','Despesa'], datasets:[{ data:[income,expense], backgroundColor:['#22c55e','#ef4444'], borderWidth:0 }] },
+      options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom', labels:{ font:{ size:12 } } } } }
+    });
+
+    // Category breakdown
+    const cats = {};
+    txs.forEach(t => { if (!cats[t.category]) cats[t.category]={income:0,expense:0}; cats[t.category][t.type==='INCOME'?'income':'expense'] += t.amount; });
+    document.getElementById('catList').innerHTML = Object.entries(cats).map(([cat, v]) => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 20px;border-bottom:1px solid #f1f5f9">
+        <span style="font-size:.875rem;font-weight:500">${cat}</span>
+        <div style="text-align:right">
+          ${v.income ? `<span style="color:#22c55e;font-size:.8rem">+${fmt(v.income)}</span>` : ''}
+          ${v.expense ? `<span style="color:#ef4444;font-size:.8rem;margin-left:8px">-${fmt(v.expense)}</span>` : ''}
+        </div>
+      </div>`).join('') || '<div style="padding:20px;color:#64748b;text-align:center">Sem dados</div>';
+
+    // Table
+    document.getElementById('txTable').innerHTML = txs.length ? txs.map(t => `
+      <tr>
+        <td>${t.description || '—'}</td>
+        <td class="text-muted">${t.category}</td>
+        <td><span class="badge ${t.type==='INCOME'?'badge-done':'badge-cancelled'}">${t.type==='INCOME'?'Receita':'Despesa'}</span></td>
+        <td class="${t.type==='INCOME'?'tx-amount-income':'tx-amount-expense'}">${t.type==='INCOME'?'+':'-'}${fmt(t.amount)}</td>
+        <td class="text-muted">${fmtDate(t.date)}</td>
+        <td><button class="btn btn-danger btn-sm" onclick="delTx(${t.id})">✕</button></td>
+      </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:#64748b;padding:40px">Nenhuma transação</td></tr>';
+  }
+
+  function openModal() {
+    document.getElementById('txType').value='INCOME'; document.getElementById('txAmount').value='';
+    document.getElementById('txCat').value=''; document.getElementById('txDesc').value='';
+    document.getElementById('txDate').value=new Date().toISOString().split('T')[0];
+    document.getElementById('modal').classList.remove('hidden');
+  }
+  function closeModal() { document.getElementById('modal').classList.add('hidden'); }
+
+  async function saveTx(e) {
+    e.preventDefault();
+    const btn=document.getElementById('saveBtn'); btn.disabled=true; btn.textContent='Salvando...';
+    try {
+      await API.post('/transactions', { type:document.getElementById('txType').value, amount:parseFloat(document.getElementById('txAmount').value), category:document.getElementById('txCat').value||'Outros', description:document.getElementById('txDesc').value, date:document.getElementById('txDate').value });
+      toast('Transação registrada!'); closeModal(); load();
+    } catch(err) { toast(err.message,'error'); }
+    btn.disabled=false; btn.textContent='Salvar';
+  }
+
+  async function delTx(id) {
+    if (!confirm('Deletar esta transação?')) return;
+    await API.del(`/transactions/${id}`); toast('Removida!'); load();
+  }
+
+  load();
+</script>
+</body>
+</html>

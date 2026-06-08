@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Projetos — ZacxOrg</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="app">
+  <div id="sidebar-container"></div>
+  <div class="main">
+    <div class="topbar"><div class="topbar-title">Projetos</div></div>
+    <div class="content">
+      <div class="page-header">
+        <p id="projectCount" class="text-muted"></p>
+        <button class="btn btn-primary" onclick="openModal()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Novo Projeto
+        </button>
+      </div>
+      <div class="projects-grid" id="projectsGrid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay hidden" id="modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modalTitle">Novo Projeto</h2>
+      <button class="modal-close" onclick="closeModal()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <form onsubmit="saveProject(event)">
+      <input type="hidden" id="editId">
+      <div class="form-group"><label>Nome *</label><input id="pName" placeholder="Nome do projeto" required></div>
+      <div class="form-group"><label>Descrição</label><textarea id="pDesc" placeholder="Descreva o projeto..."></textarea></div>
+      <div class="form-group">
+        <label>Cor</label>
+        <div class="color-swatches" id="colorSwatches"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-primary" id="saveBtn">Salvar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+  requireAuth();
+  document.getElementById('sidebar-container').innerHTML = renderSidebar('projects');
+
+  const COLORS = ['#6366f1','#8b5cf6','#ec4899','#ef4444','#f97316','#f59e0b','#22c55e','#14b8a6','#3b82f6','#06b6d4'];
+  let selected = COLORS[0];
+
+  document.getElementById('colorSwatches').innerHTML = COLORS.map(c => `<div class="color-swatch${c===selected?' selected':''}" style="background:${c}" onclick="selectColor('${c}')"></div>`).join('');
+
+  function selectColor(c) {
+    selected = c;
+    document.querySelectorAll('.color-swatch').forEach((el, i) => el.classList.toggle('selected', COLORS[i] === c));
+  }
+
+  let projects = [];
+  async function load() {
+    projects = await API.get('/projects');
+    document.getElementById('projectCount').textContent = `${projects.length} projeto${projects.length !== 1 ? 's' : ''}`;
+    document.getElementById('projectsGrid').innerHTML = projects.length ? projects.map(p => `
+      <div class="project-card" onclick="editProject('${p.id}')">
+        <div class="project-icon" style="background:${p.color}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+        </div>
+        <div class="project-name">${p.name}</div>
+        <div class="project-desc">${p.description || 'Sem descrição'}</div>
+        <div class="project-meta">${p.task_count} tarefa${p.task_count !== 1 ? 's' : ''}</div>
+      </div>`).join('') : '<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/></svg><p>Nenhum projeto ainda</p></div>';
+  }
+
+  function openModal() {
+    document.getElementById('editId').value = '';
+    document.getElementById('modalTitle').textContent = 'Novo Projeto';
+    document.getElementById('pName').value = '';
+    document.getElementById('pDesc').value = '';
+    selectColor(COLORS[0]);
+    document.getElementById('modal').classList.remove('hidden');
+  }
+
+  function editProject(id) {
+    const p = projects.find(x => String(x.id) === String(id));
+    if (!p) return;
+    document.getElementById('editId').value = p.id;
+    document.getElementById('modalTitle').textContent = 'Editar Projeto';
+    document.getElementById('pName').value = p.name;
+    document.getElementById('pDesc').value = p.description || '';
+    selectColor(p.color || COLORS[0]);
+    document.getElementById('modal').classList.remove('hidden');
+  }
+
+  function closeModal() { document.getElementById('modal').classList.add('hidden'); }
+
+  async function saveProject(e) {
+    e.preventDefault();
+    const id = document.getElementById('editId').value;
+    const body = { name: document.getElementById('pName').value, description: document.getElementById('pDesc').value, color: selected };
+    const btn = document.getElementById('saveBtn');
+    btn.disabled = true; btn.textContent = 'Salvando...';
+    try {
+      if (id) await API.put(`/projects/${id}`, body);
+      else await API.post('/projects', body);
+      toast(id ? 'Projeto atualizado!' : 'Projeto criado!');
+      closeModal(); load();
+    } catch(err) { toast(err.message, 'error'); }
+    btn.disabled = false; btn.textContent = 'Salvar';
+  }
+
+  load();
+</script>
+</body>
+</html>

@@ -1,10 +1,4 @@
 node_modules/
-dist/
-.next/
-.turbo/
-*.env
-!.env.example
-.DS_Store
+data/
+.env
 *.log
-coverage/
-prisma/migrations/

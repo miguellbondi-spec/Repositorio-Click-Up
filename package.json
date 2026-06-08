@@ -1,25 +1,16 @@
 {
   "name": "zacxorg",
   "version": "1.0.0",
-  "private": true,
-  "workspaces": ["apps/*", "packages/*"],
+  "main": "server.js",
   "scripts": {
-    "dev": "turbo run dev",
-    "build": "turbo run build",
-    "lint": "turbo run lint",
-    "test": "turbo run test",
-    "db:generate": "turbo run db:generate",
-    "db:push": "turbo run db:push",
-    "db:migrate": "turbo run db:migrate",
-    "db:seed": "turbo run db:seed"
+    "start": "node server.js",
+    "dev": "node server.js"
   },
-  "devDependencies": {
-    "turbo": "^2.0.0",
-    "typescript": "^5.4.5"
-  },
-  "packageManager": "npm@10.9.2",
-  "engines": {
-    "node": ">=20.0.0",
-    "npm": ">=10.0.0"
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "sqlite3": "^6.0.1"
   }
 }

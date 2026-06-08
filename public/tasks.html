@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Tarefas — ZacxOrg</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="app">
+  <div id="sidebar-container"></div>
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Tarefas</div>
+      <div class="topbar-actions">
+        <select id="projectFilter" class="btn btn-outline btn-sm" onchange="load()" style="padding:6px 12px">
+          <option value="">Todos os projetos</option>
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="setView('list')" id="btnList">Lista</button>
+        <button class="btn btn-primary btn-sm" onclick="setView('kanban')" id="btnKanban">Kanban</button>
+        <button class="btn btn-primary" onclick="openModal()">+ Nova Tarefa</button>
+      </div>
+    </div>
+    <div class="content">
+      <div id="kanbanView" class="kanban"></div>
+      <div id="listView" class="hidden">
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Tarefa</th><th>Projeto</th><th>Status</th><th>Prioridade</th><th>Vencimento</th><th></th></tr></thead>
+              <tbody id="taskTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modalTitle">Nova Tarefa</h2>
+      <button class="modal-close" onclick="closeModal()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <form onsubmit="saveTask(event)">
+      <input type="hidden" id="editId">
+      <div class="form-group"><label>Título *</label><input id="tTitle" placeholder="Título da tarefa" required></div>
+      <div class="form-group"><label>Descrição</label><textarea id="tDesc" placeholder="Detalhes..."></textarea></div>
+      <div class="grid-2">
+        <div class="form-group"><label>Status</label>
+          <select id="tStatus">
+            <option value="BACKLOG">Backlog</option><option value="TODO" selected>A Fazer</option>
+            <option value="IN_PROGRESS">Em Progresso</option><option value="IN_REVIEW">Em Revisão</option>
+            <option value="DONE">Concluído</option><option value="CANCELLED">Cancelado</option>
+          </select></div>
+        <div class="form-group"><label>Prioridade</label>
+          <select id="tPriority">
+            <option value="URGENT">Urgente</option><option value="HIGH">Alta</option>
+            <option value="MEDIUM" selected>Média</option><option value="LOW">Baixa</option>
+          </select></div>
+      </div>
+      <div class="grid-2">
+        <div class="form-group"><label>Projeto</label><select id="tProject"></select></div>
+        <div class="form-group"><label>Vencimento</label><input type="date" id="tDue"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-primary" id="saveBtn">Salvar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+  requireAuth();
+  document.getElementById('sidebar-container').innerHTML = renderSidebar('tasks');
+
+  const STATUSES = ['BACKLOG','TODO','IN_PROGRESS','IN_REVIEW','DONE'];
+  const STATUS_LABELS = {BACKLOG:'Backlog',TODO:'A Fazer',IN_PROGRESS:'Em Progresso',IN_REVIEW:'Em Revisão',DONE:'Concluído',CANCELLED:'Cancelado'};
+  let tasks=[], projects=[], view='kanban';
+
+  async function load() {
+    const pf = document.getElementById('projectFilter').value;
+    [tasks, projects] = await Promise.all([API.get('/tasks' + (pf ? `?project_id=${pf}` : '')), API.get('/projects')]);
+
+    // Populate project dropdowns
+    const pSel = document.getElementById('tProject');
+    pSel.innerHTML = '<option value="">— Sem projeto —</option>' + projects.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+    const pFilter = document.getElementById('projectFilter');
+    const curFilter = pFilter.value;
+    pFilter.innerHTML = '<option value="">Todos os projetos</option>' + projects.map(p => `<option value="${p.id}"${p.id==curFilter?' selected':''}>${p.name}</option>`).join('');
+
+    if (view === 'kanban') renderKanban(); else renderList();
+  }
+
+  function renderKanban() {
+    document.getElementById('kanbanView').innerHTML = STATUSES.map(s => {
+      const cols = tasks.filter(t => t.status === s);
+      return `<div class="kanban-col">
+        <div class="kanban-col-header"><span class="kanban-col-title">${STATUS_LABELS[s]}</span><span class="kanban-count">${cols.length}</span></div>
+        <div class="kanban-cards">${cols.map(t => `
+          <div class="kanban-card" onclick="editTask(${t.id})">
+            <div class="kanban-card-title">${t.title}</div>
+            <div class="kanban-card-meta">${statusBadge(t.status)}${priorityLabel(t.priority)}</div>
+            ${t.due_date ? `<div style="font-size:.75rem;color:#64748b;margin-top:6px">📅 ${fmtDate(t.due_date)}</div>` : ''}
+          </div>`).join('')}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderList() {
+    document.getElementById('taskTable').innerHTML = tasks.length ? tasks.map(t => `
+      <tr>
+        <td><strong>${t.title}</strong></td>
+        <td class="text-muted">${t.project_name || '—'}</td>
+        <td>${statusBadge(t.status)}</td>
+        <td>${priorityLabel(t.priority)}</td>
+        <td class="text-muted">${fmtDate(t.due_date)}</td>
+        <td><button class="btn btn-outline btn-sm" onclick="editTask(${t.id})">Editar</button> <button class="btn btn-danger btn-sm" onclick="delTask(${t.id})">✕</button></td>
+      </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:#64748b;padding:40px">Nenhuma tarefa</td></tr>';
+  }
+
+  function setView(v) {
+    view = v;
+    document.getElementById('kanbanView').classList.toggle('hidden', v !== 'kanban');
+    document.getElementById('listView').classList.toggle('hidden', v !== 'list');
+    document.getElementById('btnKanban').className = v==='kanban' ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm';
+    document.getElementById('btnList').className = v==='list' ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm';
+    if (v === 'list') renderList(); else renderKanban();
+  }
+
+  function openModal() {
+    document.getElementById('editId').value = '';
+    document.getElementById('modalTitle').textContent = 'Nova Tarefa';
+    document.getElementById('tTitle').value = '';
+    document.getElementById('tDesc').value = '';
+    document.getElementById('tStatus').value = 'TODO';
+    document.getElementById('tPriority').value = 'MEDIUM';
+    document.getElementById('tProject').value = '';
+    document.getElementById('tDue').value = '';
+    document.getElementById('modal').classList.remove('hidden');
+  }
+
+  function editTask(id) {
+    const t = tasks.find(x => x.id === id); if (!t) return;
+    document.getElementById('editId').value = t.id;
+    document.getElementById('modalTitle').textContent = 'Editar Tarefa';
+    document.getElementById('tTitle').value = t.title;
+    document.getElementById('tDesc').value = t.description || '';
+    document.getElementById('tStatus').value = t.status;
+    document.getElementById('tPriority').value = t.priority;
+    document.getElementById('tProject').value = t.project_id || '';
+    document.getElementById('tDue').value = t.due_date || '';
+    document.getElementById('modal').classList.remove('hidden');
+  }
+
+  function closeModal() { document.getElementById('modal').classList.add('hidden'); }
+
+  async function saveTask(e) {
+    e.preventDefault();
+    const id = document.getElementById('editId').value;
+    const body = { title: document.getElementById('tTitle').value, description: document.getElementById('tDesc').value, status: document.getElementById('tStatus').value, priority: document.getElementById('tPriority').value, project_id: document.getElementById('tProject').value || null, due_date: document.getElementById('tDue').value || null };
+    const btn = document.getElementById('saveBtn'); btn.disabled=true; btn.textContent='Salvando...';
+    try {
+      if (id) await API.put(`/tasks/${id}`, body); else await API.post('/tasks', body);
+      toast(id ? 'Tarefa atualizada!' : 'Tarefa criada!');
+      closeModal(); load();
+    } catch(err) { toast(err.message,'error'); }
+    btn.disabled=false; btn.textContent='Salvar';
+  }
+
+  async function delTask(id) {
+    if (!confirm('Deletar esta tarefa?')) return;
+    await API.del(`/tasks/${id}`); toast('Tarefa removida!'); load();
+  }
+
+  load();
+</script>
+</body>
+</html>
